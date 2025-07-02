@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>JSmol Viewer + Interactive PES Plot</title>
+
+  <!-- jQuery -->
+  <script src="https://code.jquery.com/jquery-3.4.1.js"></script>
+
+  <!-- JSmol libraries -->
+  <script src="https://chemapps.stolaf.edu/jmol/jsmol/JSmol.min.js"></script>
+  <script src="https://chemapps.stolaf.edu/jmol/jsmol/js/Jmol.js"></script>
+  <script src="https://chemapps.stolaf.edu/jmol/jsmol/js/Jmol2.js"></script>
+
+  <!-- Plotly -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .back-link {
+      display: inline-block;
+      margin-bottom: 15px;
+      padding: 8px 16px;
+      background-color: #4CAF50;
+      color: white;
+      text-decoration: none;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .back-link:hover {
+      background-color: #45a049;
+    }
+    .pathway-title {
+      font-size: 24px;
+      font-weight: bold;
+      color: #333;
+      margin: 10px 0;
+    }
+    .system-switcher {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin: 20px 0;
+      padding: 15px;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .system-btn {
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      border: 2px solid #2196F3;
+      background-color: white;
+      color: #2196F3;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .system-btn:hover {
+      background-color: #e3f2fd;
+    }
+    .system-btn.active {
+      background-color: #2196F3;
+      color: white;
+    }
+    .container {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 20px;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .viewer, .plot {
+      flex: 1;
+    }
+    #plot {
+      width: 100%;
+      height: 400px;
+    }
+    .frame-links {
+      margin-top: 10px;
+      text-align: center;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .frame-links a {
+      display: block;
+      text-decoration: none;
+      color: #2196F3;
+      cursor: pointer;
+      margin: 3px 0;
+      padding: 5px;
+      border-radius: 3px;
+      transition: background-color 0.2s;
+    }
+    .frame-links a:hover {
+      background-color: #e3f2fd;
+    }
+    .frame-label {
+      font-weight: bold;
+      font-size: 18px;
+      margin-bottom: 5px;
+      color: #333;
+      text-align: center;
+      padding: 8px;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .jmol-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .control-panel {
+      margin-top: 15px;
+      padding: 15px;
+      background-color: #f9f9f9;
+      border-radius: 6px;
+    }
+    .control-row {
+      margin: 10px 0;
+      text-align: center;
+    }
+    .control-row button {
+      margin: 2px;
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      background-color: white;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .control-row button:hover {
+      background-color: #f0f0f0;
+    }
+    .speed-control {
+      text-align: center;
+      margin-top: 15px;
+    }
+    .speed-control input {
+      padding: 5px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      width: 80px;
+    }
+    .loading-message {
+      text-align: center;
+      font-size: 18px;
+      color: #666;
+      margin: 20px 0;
+    }
+    .error-message {
+      text-align: center;
+      font-size: 16px;
+      color: #d32f2f;
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #ffebee;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <a href="index.html" class="back-link">← Back to Diffusion Network</a>
+    <div class="pathway-title" id="pathwayTitle">Loading Diffusion Pathway...</div>
+  </div>
+
+  <div class="system-switcher">
+    <button class="system-btn active" id="fullSystemBtn" onclick="switchToFullSystem()">Full System</button>
+    <button class="system-btn" id="qmSystemBtn" onclick="switchToQMSystem()">QM Region Only</button>
+  </div>
+
+  <p>The potential energy surface is plotted relative to the energy of the starting minima (min 1). The value reported in the PES are not corrected for the ZPE <br>
+     The transition state is highlighted in the plot and labeled as "TS". The first frame is the starting minima (min 1) and the last frame is the second minima (min 2). <br>
+     The frame links below the plot allow you to quickly navigate to specific frames in the trajectory. <br> 
+       
+     To switch between the full system and the QM region only, use the buttons above.
+  </p>
+
+  <div id="loadingMessage" class="loading-message">Loading trajectory data...</div>
+  <div id="errorMessage" class="error-message" style="display:none;"></div>
+
+  <div id="mainContainer" class="container" style="display:none;">
+    <div class="plot">
+      <div id="plot"></div>
+      <div id="frameLinks" class="frame-links"></div>
+      <p>
+        To visualize a specific frame stop the animation and click on the frame link.
+      </p>
+
+    </div>
+
+    <div class="viewer">
+      <div class="frame-label" id="frameLabel">Current Frame: 1 (min 1)</div>
+      <div class="jmol-wrapper">
+        <div id="jmolContainer"></div>
+      </div>
+
+      <div class="control-panel">
+        <div class="control-row">
+          <div>
+            <button onclick="sendJmolScript('spacefill off')">Sticks</button>
+            <button onclick="sendJmolScript('spacefill 25%')">Sticks and balls</button>
+            <button onclick="sendJmolScript('spacefill 100%')">Van der Waals</button>
+          </div>
+          <div>
+            <button onclick="sendJmolScript('hbonds off')">H-Bonds Off</button>
+            <button onclick="sendJmolScript('calculate hbonds; color hbonds blue; hbonds 0.10')">H-Bonds On</button>
+          </div>
+          <div>
+            <button onclick="sendJmolScript('spin on')">Spin On</button>
+            <button onclick="sendJmolScript('spin off')">Spin Off</button>
+          </div>
+        </div>
+        <div class="control-row">
+          <button onclick="sendJmolScript('animation on')">Start</button>
+          <button onclick="sendJmolScript('animation off; frame 1')">Stop</button>
+          <button onclick="sendJmolScript('animation pause')">Pause</button>
+          <button onclick="sendJmolScript('animation resume')">Resume</button>
+        </div>
+        <div class="control-row">
+          <button onclick="sendJmolScript('frame prev')">Previous</button>
+          <button onclick="sendJmolScript('frame next')">Next</button>
+          <button onclick="sendJmolScript('frame 1')">First Frame</button>
+          <button onclick="sendJmolScript('frame last')">Last Frame</button>
+        </div>
+        <div class="control-row">
+          <button onclick="sendJmolScript('write IMAGE png')">Save Snapshot</button>
+        </div>
+        <div class="speed-control">
+          Speed (ms):
+          <input type="number" id="speedInput" value="200" min="50" step="50" onchange="updateSpeed(this.value)" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentPathway = '';
+    let currentSystem = 'full';
+    let relativeEnergiesKJmol = [];
+    let currentFrameCount = 0;
+    let highlightTrace = {
+      x: [1],
+      y: [0],
+      mode: 'markers',
+      type: 'scatter',
+      marker: { color: 'red', size: 10 },
+      name: 'Selected Frame'
+    };
+    let jmolAppletObj = null;
+
+    function sendJmolScript(script) {
+      console.log("Sending to JSmol:", script);
+      if (jmolAppletObj) {
+        Jmol.script(jmolAppletObj, script);
+      } else {
+        console.warn("No Jmol applet loaded yet!");
+      }
+    }
+
+    function getURLParameter(name) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(name);
+    }
+
+    function updateSpeed(ms) {
+      const fps = 2000 / parseInt(ms);
+      sendJmolScript("animation fps " + fps);
+    }
+
+    function showError(message) {
+      document.getElementById('errorMessage').textContent = message;
+      document.getElementById('errorMessage').style.display = 'block';
+      document.getElementById('loadingMessage').style.display = 'none';
+    }
+
+    function hideError() {
+      document.getElementById('errorMessage').style.display = 'none';
+    }
+
+    function switchToFullSystem() {
+      currentSystem = 'full';
+      document.getElementById('fullSystemBtn').classList.add('active');
+      document.getElementById('qmSystemBtn').classList.remove('active');
+      loadTrajectory();
+    }
+
+    function switchToQMSystem() {
+      currentSystem = 'qm';
+      document.getElementById('qmSystemBtn').classList.add('active');
+      document.getElementById('fullSystemBtn').classList.remove('active');
+      loadTrajectory();
+    }
+
+    function getTrajectoryFilename() {
+      return currentSystem === 'full'
+        ? `all_traj/neb_${currentPathway}_CI_MEP_trj.xyz`
+        : `all_traj/neb_${currentPathway}_CI_MEP.QMRegion_trj.xyz`;
+    }
+
+    async function loadTrajectory() {
+      try {
+        hideError();
+        const filename = getTrajectoryFilename();
+        document.getElementById('loadingMessage').style.display = 'block';
+        document.getElementById('mainContainer').style.display = 'none';
+
+        const response = await fetch(filename);
+        if (!response.ok) throw new Error(`Could not load trajectory file: ${filename}`);
+
+        const text = await response.text();
+
+        document.getElementById('loadingMessage').style.display = 'none';
+        document.getElementById('mainContainer').style.display = 'flex';
+
+        await parseTrajectoryAndPlotPES(text);
+        loadJMolTrajectory(filename);
+
+      } catch (error) {
+        console.error(error);
+        showError(`Error loading trajectory: ${error.message}`);
+      }
+    }
+
+    function loadJMolTrajectory(filename) {
+      const Info = {
+        width: 400,
+        height: 400,
+        serverURL: "https://chemapps.stolaf.edu/jmol/jsmol/php/jsmol.php",
+        use: "HTML5",
+        j2sPath: "https://chemapps.stolaf.edu/jmol/jsmol/j2s",
+        script: `
+          background white;
+          load ${filename};
+          animation on;
+          animation mode palindrome;
+          spacefill 25%;
+          calculate hbonds;
+          color hbonds blue;
+          hbonds 0.10;
+          set antialiasDisplay true;
+          connect 1.0 3 (hydrogen and connected(oxygen)) (sulfur) partial magenta create;
+          connect 1.0 3 (hydrogen and connected(sulfur)) (oxygen) partial magenta create;
+          animation fps 10;
+        `
+      };
+
+      const container = document.getElementById('jmolContainer');
+      container.innerHTML = '';
+
+      jmolAppletObj = Jmol.getApplet("jmolApplet", Info);
+      container.innerHTML = Jmol.getAppletHtml(jmolAppletObj);
+    }
+
+    async function parseTrajectoryAndPlotPES(text) {
+      const lines = text.split('\n');
+      const energies = [];
+      let frameCount = 0;
+
+      for (let line of lines) {
+        if (line.includes('E ')) {
+          const parts = line.trim().split(/\s+/);
+          const energyHartree = parseFloat(parts[parts.length - 1]);
+          energies.push(energyHartree);
+          frameCount++;
+        }
+      }
+
+      if (energies.length === 0) {
+        throw new Error('No energy data found in trajectory file');
+      }
+
+      const refEnergy = energies[0];
+      relativeEnergiesKJmol = energies.map(e => ((e - refEnergy) * (0.78) ) *2625.5);
+      currentFrameCount = frameCount;
+
+      let tsIndex = 0;
+      let maxEnergy = relativeEnergiesKJmol[0];
+      for (let i = 1; i < relativeEnergiesKJmol.length; i++) {
+        if (relativeEnergiesKJmol[i] > maxEnergy) {
+          maxEnergy = relativeEnergiesKJmol[i];
+          tsIndex = i;
+        }
+      }
+
+      const frames = Array.from({ length: relativeEnergiesKJmol.length }, (_, i) => i + 1);
+
+      const trace = {
+        x: frames,
+        y: relativeEnergiesKJmol,
+        mode: 'lines+markers',
+        type: 'scatter',
+        name: 'Relative PES Profile',
+        line: { color: '#2196F3', width: 3 },
+        marker: { color: '#2196F3', size: 6 }
+      };
+
+      highlightTrace.x = [1];
+      highlightTrace.y = [relativeEnergiesKJmol[0]];
+
+      const layout = {
+        title: {
+          text: `Potential Energy Surface `,
+          font: { size: 16 }
+        },
+        xaxis: { title: 'Frame Number', gridcolor: '#e0e0e0' },
+        yaxis: { title: 'Relative Energy (kJ/mol)', gridcolor: '#e0e0e0' },
+        plot_bgcolor: '#fafafa',
+        paper_bgcolor: 'white',
+        margin: { t: 60, b: 60, l: 60, r: 20 }
+      };
+
+      Plotly.newPlot('plot', [trace, highlightTrace], layout);
+      createFrameLinks(frameCount, tsIndex);
+    }
+
+    function createFrameLinks(frameCount, tsIndex) {
+      const frameLinksDiv = document.getElementById('frameLinks');
+      frameLinksDiv.innerHTML = '';
+
+      for (let i = 1; i <= frameCount; i++) {
+        const link = document.createElement('a');
+        let label = `Frame ${i}`;
+        if (i === 1) label += ' (min 1)';
+        else if (i === frameCount) label += ' (min 2)';
+        else if (i === tsIndex + 1) label += ' (TS)';
+
+        link.textContent = label;
+        link.onclick = () => {
+          sendJmolScript('frame ' + i);
+          document.getElementById('frameLabel').textContent = `Current Frame: ${label}`;
+          highlightTrace.x = [i];
+          highlightTrace.y = [relativeEnergiesKJmol[i - 1]];
+          Plotly.update('plot', { x: [highlightTrace.x], y: [highlightTrace.y] }, {}, 1);
+        };
+        frameLinksDiv.appendChild(link);
+      }
+    }
+
+    function initializePage() {
+      currentPathway = getURLParameter('pathway');
+      if (!currentPathway) {
+        showError('No pathway specified in URL.');
+        return;
+      }
+      const [from, to] = currentPathway.split('_');
+      document.getElementById('pathwayTitle').textContent = `Diffusion Pathway: ${from} → ${to}`;
+      loadTrajectory();
+    }
+
+    window.addEventListener('load', initializePage);
+  </script>
+</body>
+</html>

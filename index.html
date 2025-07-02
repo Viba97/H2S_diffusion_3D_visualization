@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Diffusion dataset for H2S</title>
+
+  <!-- Plotly -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
+  <!-- DataTables CSS and JS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      box-sizing: border-box;
+    }
+
+    .graph-legend-wrapper {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      margin-bottom: 40px;
+    }
+
+    .graph-container {
+      flex: 1;
+      min-width: 0;
+    }
+
+    #graph3d {
+      width: 100%;
+      height: 600px;
+      border: 1px solid #ddd;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .color-legend-container {
+      width: 100px;
+      max-height: 600px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .color-legend {
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 10px;
+      background: white;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .legend-title {
+      font-weight: bold;
+      margin-bottom: 8px;
+      text-align: center;
+      color: #333;
+      font-size: 12px;
+    }
+
+    .color-bar {
+      width: 20px;
+      height: 200px;
+      border-radius: 3px;
+      margin: 5px 0;
+      border: 1px solid #ccc;
+    }
+
+    .edge-colorbar {
+      background: linear-gradient(to top,
+        rgb(128,0,128) 0%,
+        rgb(0,0,255) 25%,
+        rgb(0,255,0) 50%,
+        rgb(255,255,0) 75%,
+        rgb(255,0,0) 100%);
+    }
+
+    .node-colorbar {
+      background: linear-gradient(to top,
+        rgb(255,255,224) 0%,
+        rgb(255,69,0) 100%);
+    }
+
+    .legend-value {
+      font-size: 10px;
+      color: #666;
+      margin: 2px 0;
+      text-align: center;
+      display: block;
+    }
+
+    .legend-unit {
+      font-size: 10px;
+      color: #666;
+      margin-top: 2px;
+      text-align: center;
+      display: block;
+    }
+
+    #diffusionTable {
+      margin-top: 30px;
+      width: 100%;
+      font-size: 12px;
+    }
+
+    .pathway-link {
+      color: #1e6bb8;
+      text-decoration: none;
+      font-weight: bold;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 3px;
+      transition: background-color 0.2s;
+    }
+
+    .pathway-link:hover {
+      background-color: #e6f3ff;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>3D Diffusion Network of H<sub>2</sub>S on 200 water molecules cluster</h2>
+
+  <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
+    Visualization of diffusion pathways and energy profiles on amorphous solid water surfaces. <br>
+    The graph shows the activation barriers and binding energies for each diffusion pathway. <br>
+    The color of the edges represents the activation barriers, while the nodes represent binding energies at different sites. <br>
+    The table below lists the diffusion pathways with their respective forward and reverse barriers (corrected for ZPE), distances, number of H₂O molecules involved, and transition state frequencies. <br>
+    The barriers are computed at ONIOM(B97-3c:xTB-GFN2) level and benchmarked against DLPNO-CCSD(T)/aug-cc-pVTZ calculations.
+  </p>
+
+  <div class="graph-legend-wrapper">
+    <div class="graph-container">
+      <div id="graph3d"></div>
+    </div>
+    <div class="color-legend-container">
+      <div class="color-legend">
+        <div class="legend-title">Activation<br>Barriers</div>
+        <span id="max-barrier" class="legend-value">100</span>
+        <div class="color-bar edge-colorbar"></div>
+        <span id="min-barrier" class="legend-value">0</span>
+        <span class="legend-unit">kJ/mol</span>
+      </div>
+
+      <div class="color-legend">
+        <div class="legend-title">Binding<br>Energies</div>
+        <span id="max-binding" class="legend-value">100</span>
+        <div class="color-bar node-colorbar"></div>
+        <span id="min-binding" class="legend-value">0</span>
+        <span class="legend-unit">kJ/mol</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>Diffusion Pathways Table</h3>
+    <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
+    Click on the diffusion paths in the table below to explore individual pathways in detail. <br>
+    </p>
+  <div style="overflow-x:auto;">
+    <table id="diffusionTable" class="display">
+      <thead>
+        <tr>
+          <th>Diffusion Path</th>
+          <th>Forward Barrier (kJ/mol)</th>
+          <th>Reverse Barrier (kJ/mol)</th>
+          <th>Distance (Å)</th>
+          <th>H₂O molecules (QM Region)</th>
+          <th>TS Frequency (cm⁻¹)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+    function parseCSV(data, delimiter = ',') {
+      const lines = data.trim().split('\n');
+      const headers = lines[0].split(delimiter);
+      return lines.slice(1).map(line => {
+        const values = line.split(delimiter);
+        const row = {};
+        headers.forEach((h, i) => row[h] = values[i]);
+        return row;
+      });
+    }
+
+    async function loadXYZ(path) {
+      const res = await fetch(path);
+      const text = await res.text();
+      const lines = text.trim().split('\n');
+      let natoms = parseInt(lines[0]);
+      let coords = [];
+      for (let i = 2; i < 2 + natoms; i++) {
+        let parts = lines[i].trim().split(/\s+/);
+        let symbol = parts[0];
+        let x = parseFloat(parts[1]);
+        let y = parseFloat(parts[2]);
+        let z = parseFloat(parts[3]);
+        if (symbol === "S") {
+          coords.push([x, y, z]);
+        }
+      }
+      return coords[0];
+    }
+
+    function createPathwayLink(from, to) {
+      return `<a href="visualizer.html?pathway=${from}_${to}" class="pathway-link">${from}→${to}</a>`;
+    }
+
+    async function buildGraph() {
+      const exclude_numbers = ["13_271", "13_432", "271_337", "271_432", "337_432", "26_78"];
+      const res1 = await fetch("data/NEW_FINAL.csv");
+      const text1 = await res1.text();
+      let df = parseCSV(text1);
+
+      df = df.filter(row =>
+        parseFloat(row["react_to_prod_ZPE"]) > 0 &&
+        parseFloat(row["prod_to_react_ZPE"]) > 0 &&
+        parseFloat(row["Freq_imm_TS"]) < 0 &&
+        !exclude_numbers.includes(row["Folder"])
+      );
+
+      df.forEach(row => {
+        row["react_to_prod_ZPE"] *= 0.78;
+        row["prod_to_react_ZPE"] *= 0.78;
+        row["BE0_post_react"] *= 0.76;
+        row["BE0_post_prod"] *= 0.76;
+      });
+
+      let unique_sites = new Set();
+      df.forEach(row => {
+        let [i, j] = row["Folder"].split("_");
+        unique_sites.add(i);
+        unique_sites.add(j);
+      });
+      unique_sites = Array.from(unique_sites).sort((a, b) => parseInt(a) - parseInt(b));
+
+      let site_max_BE = {};
+      let encountered_r_sites = new Set();
+
+      for (let row of df) {
+        let [r_site, p_site] = row["Folder"].split("_");
+        let BE_react = parseFloat(row["BE0_post_react"]) * 1000;
+        encountered_r_sites.add(r_site);
+        if (!(r_site in site_max_BE)) {
+          site_max_BE[r_site] = BE_react;
+        } else {
+          site_max_BE[r_site] = Math.max(site_max_BE[r_site], BE_react);
+        }
+      }
+
+      let missing_sites = unique_sites.filter(site => !encountered_r_sites.has(site));
+      for (let missing_site of missing_sites) {
+        let potential_matches = df.filter(row => {
+          let p_site = row["Folder"].split("_")[1];
+          return p_site === missing_site;
+        });
+        if (potential_matches.length > 0) {
+          let max_prod_BE = Math.max(
+            ...potential_matches.map(row => parseFloat(row["BE0_post_prod"]) * 1000)
+          );
+          site_max_BE[missing_site] = max_prod_BE;
+        } else {
+          site_max_BE[missing_site] = 0;
+          console.warn(`⚠️ No BE found for site ${missing_site}`);
+        }
+      }
+
+      let BE_map = {};
+      unique_sites.forEach(site => {
+        BE_map[site] = (site_max_BE[site] || 0) / 1000;
+      });
+
+      let edge_pairs = [];
+      for (let row of df) {
+        let [i, j] = row["Folder"].split("_");
+        edge_pairs.push({
+          from: i,
+          to: j,
+          forward_weight: parseFloat(row["react_to_prod_ZPE"]),
+          reverse_weight: parseFloat(row["prod_to_react_ZPE"]),
+          distance: parseFloat(row["Distance"]),
+          h2o_molecules: parseInt(row["H2O_mol_NEB"]),
+          imaginary_freq: parseFloat(row["Freq_imm_TS"])
+        });
+      }
+
+      let node_positions = {};
+      for (let site of unique_sites) {
+        let xyz_path = `BE_site_opt/${site}_oniom.QMRegion.xyz`;
+        let pos = await loadXYZ(xyz_path);
+        node_positions[site] = pos;
+      }
+
+      let all_weights = [];
+      edge_pairs.forEach(pair => {
+        all_weights.push(pair.forward_weight, pair.reverse_weight);
+      });
+      let minW = Math.min(...all_weights);
+      let maxW = Math.max(...all_weights);
+
+      let edge_traces = [];
+
+      for (let pair of edge_pairs) {
+        let { from, to, forward_weight, reverse_weight, distance, h2o_molecules, imaginary_freq } = pair;
+        let p1 = node_positions[from];
+        let p2 = node_positions[to];
+        if (!p1 || !p2) continue;
+
+        let forward_curve = curvedEdge(p1, p2, 1, 30, 1.5);
+        let forward_color_val = (forward_weight - minW) / (maxW - minW);
+        let forward_color = getColorFromScale(forward_color_val);
+        let forward_hover = `${from} → ${to}<br>Barrier: ${forward_weight.toFixed(2)} kJ/mol<br>Distance: ${distance.toFixed(3)} Å<br>H₂O molecules (QM): ${h2o_molecules}<br>TS frequency: ${imaginary_freq.toFixed(1)} cm⁻¹`;
+
+        edge_traces.push({
+          type: "scatter3d",
+          mode: "lines",
+          x: forward_curve.map(pt => pt[0]),
+          y: forward_curve.map(pt => pt[1]),
+          z: forward_curve.map(pt => pt[2]),
+          line: { color: forward_color, width: 4 },
+          hoverinfo: "text",
+          text: forward_hover,
+          showlegend: false
+        });
+
+        let reverse_curve = curvedEdge(p2, p1, 1, 30, 1.5);
+        let reverse_color_val = (reverse_weight - minW) / (maxW - minW);
+        let reverse_color = getColorFromScale(reverse_color_val);
+        let reverse_hover = `${to} → ${from}<br>Barrier: ${reverse_weight.toFixed(2)} kJ/mol<br>Distance: ${distance.toFixed(3)} Å<br>H₂O molecules (QM): ${h2o_molecules}<br>TS frequency: ${imaginary_freq.toFixed(1)} cm⁻¹`;
+
+        edge_traces.push({
+          type: "scatter3d",
+          mode: "lines",
+          x: reverse_curve.map(pt => pt[0]),
+          y: reverse_curve.map(pt => pt[1]),
+          z: reverse_curve.map(pt => pt[2]),
+          line: { color: reverse_color, width: 4 },
+          hoverinfo: "text",
+          text: reverse_hover,
+          showlegend: false
+        });
+      }
+
+      let node_xyz = unique_sites.map(site => node_positions[site]);
+      let node_x = node_xyz.map(p => p[0]);
+      let node_y = node_xyz.map(p => p[1]);
+      let node_z = node_xyz.map(p => p[2]);
+
+      let node_colors = unique_sites.map(site => BE_map[site] || 0);
+      let minBE = Math.min(...node_colors);
+      let maxBE = Math.max(...node_colors);
+
+      let node_color_rgb = node_colors.map(val => {
+        let norm = (val - minBE) / (maxBE - minBE || 1);
+        return interpolateNodeColor(norm);
+      });
+
+      let node_trace = {
+        type: "scatter3d",
+        mode: "markers",
+        x: node_x,
+        y: node_y,
+        z: node_z,
+        marker: {
+          size: 8,
+          color: node_color_rgb,
+          line: { color: 'black', width: 1 }
+        },
+        text: unique_sites.map(site =>
+          `Site ${site}<br>BE(0): ${(BE_map[site] || 0).toFixed(2)} kJ/mol`
+        ),
+        hoverinfo: "text",
+        name: "Binding Sites"
+      };
+
+      let layout = {
+        showlegend: false,
+        scene: {
+          xaxis: { title: "X (Å)", showgrid: false, zeroline: false },
+          yaxis: { title: "Y (Å)", showgrid: false, zeroline: false },
+          zaxis: { title: "Z (Å)", showgrid: false, zeroline: false },
+          camera: { eye: { x: 1.5, y: 1.5, z: 1.5 } }
+        },
+        margin: { l: 0, r: 0, t: 40, b: 0 }
+      };
+
+      document.getElementById('min-barrier').textContent = minW.toFixed(1);
+      document.getElementById('max-barrier').textContent = maxW.toFixed(1);
+      document.getElementById('min-binding').textContent = minBE.toFixed(1);
+      document.getElementById('max-binding').textContent = maxBE.toFixed(1);
+
+      Plotly.newPlot("graph3d", [node_trace, ...edge_traces], layout);
+
+      let tableData = edge_pairs.map(pair => ([
+        createPathwayLink(pair.from, pair.to),
+        pair.forward_weight.toFixed(2),
+        pair.reverse_weight.toFixed(2),
+        pair.distance.toFixed(3),
+        pair.h2o_molecules,
+        pair.imaginary_freq.toFixed(1)
+      ]));
+
+      $('#diffusionTable').DataTable({
+        data: tableData,
+        columns: [
+          { title: "Diffusion Path" },
+          { title: "Forward Barrier (kJ/mol)" },
+          { title: "Reverse Barrier (kJ/mol)" },
+          { title: "Distance (Å)" },
+          { title: "H₂O molecules (QM Region)" },
+          { title: "TS Frequency (cm⁻¹)" }
+        ],
+        pageLength: 10,
+        order: [[1, 'asc']],
+        columnDefs: [{ targets: 0, orderable: false }]
+      });
+    }
+
+    function curvedEdge(p1, p2, direction = 1, n = 30, height = 1.5) {
+      let midpoint = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, (p1[2] + p2[2]) / 2];
+      let v = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+      let perp;
+      if (Math.abs(v[2]) < 0.9) {
+        perp = [-v[1], v[0], 0];
+      } else {
+        perp = [0, -v[2], v[1]];
+      }
+      let len = Math.sqrt(perp[0] ** 2 + perp[1] ** 2 + perp[2] ** 2);
+      if (len > 0) {
+        perp = perp.map(d => d / len * height * direction);
+      } else {
+        perp = [0, 0, height * direction];
+      }
+      let control = [midpoint[0] + perp[0], midpoint[1] + perp[1], midpoint[2] + perp[2]];
+      let points = [];
+      for (let i = 0; i <= n; i++) {
+        let t = i / n;
+        points.push([
+          (1 - t) ** 2 * p1[0] + 2 * (1 - t) * t * control[0] + t ** 2 * p2[0],
+          (1 - t) ** 2 * p1[1] + 2 * (1 - t) * t * control[1] + t ** 2 * p2[1],
+          (1 - t) ** 2 * p1[2] + 2 * (1 - t) * t * control[2] + t ** 2 * p2[2]
+        ]);
+      }
+      return points;
+    }
+
+    function getColorFromScale(t) {
+      t = Math.max(0, Math.min(1, t));
+      if (t <= 0.25) return interpolateRGB([128, 0, 128], [0, 0, 255], t / 0.25);
+      else if (t <= 0.5) return interpolateRGB([0, 0, 255], [0, 255, 0], (t - 0.25) / 0.25);
+      else if (t <= 0.75) return interpolateRGB([0, 255, 0], [255, 255, 0], (t - 0.5) / 0.25);
+      else return interpolateRGB([255, 255, 0], [255, 0, 0], (t - 0.75) / 0.25);
+    }
+
+    function interpolateRGB(color1, color2, t) {
+      let r = Math.round(color1[0] * (1 - t) + color2[0] * t);
+      let g = Math.round(color1[1] * (1 - t) + color2[1] * t);
+      let b = Math.round(color1[2] * (1 - t) + color2[2] * t);
+      return `rgb(${r},${g},${b})`;
+    }
+
+    function interpolateNodeColor(t) {
+      return interpolateRGB([255, 255, 224], [255, 69, 0], t);
+    }
+
+    buildGraph();
+  </script>
+</body>
+</html>
